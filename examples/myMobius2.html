@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - parametric geometries</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<div id="container"></div>
+		<div id="info"><a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgl - parametric geometries</div>
+
+		<!-- Import maps polyfill -->
+		<!-- Remove this when import maps will be widely supported -->
+		<script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+
+			import Stats from './jsm/libs/stats.module.js';
+
+			import { Curves } from './jsm/curves/CurveExtras.js';
+			import { ParametricGeometry } from './jsm/geometries/ParametricGeometry.js';
+			import { ParametricGeometries } from './jsm/geometries/ParametricGeometries.js';
+			
+			import {BufferGeometry} from '../src/core/BufferGeometry.js';
+			
+
+
+						
+			function mobiusfunc (u,t,target){
+				u = u - 0.5;
+				const v = 2 * Math.PI * t;
+
+				const a = 2;
+
+				const x = Math.cos( v ) * ( a + u * Math.cos( v / 2 ) );
+				const y = Math.sin( v ) * ( a + u * Math.cos( v / 2 ) );
+				const z = u * Math.sin( v / 2 );
+
+				target.set( x, y, z );
+			}
+
+			class Mobius extends BufferGeometry{
+				constructor(slices = 8, stacks = 8){
+					const indices = [];
+					const vertices = [];
+					const normals = [];
+					const uvs = [];
+				
+					const EPS = 0.00001;
+				
+					const normal = new THREE.Vector3();
+				
+					const p0 = new THREE.Vector3(), p1 = new THREE.Vector3();
+					const pu = new THREE.Vector3(), pv = new THREE.Vector3();
+				
+					for ( let i = 0; i <= stacks; i ++ ) {
+				
+						const v = i / stacks;
+				
+						for ( let j = 0; j <= slices; j ++ ) {
+				
+							const u = j / slices;
+							mobiusfunc( u,v,p0)
+							vertices.push( p0.x, p0.y, p0.z );
+				
+							// normal
+				
+							// approximate tangent vectors via finite differences
+				
+							if ( u - EPS >= 0 ) {
+				
+								mobiusfunc( u - EPS, v, p1 );
+								pu.subVectors( p0, p1 );
+				
+							} else {
+				
+								mobiusfunc( u + EPS, v, p1 );
+								pu.subVectors( p1, p0 );
+				
+							}
+				
+							if ( v - EPS >= 0 ) {
+				
+								mobiusfunc( u, v - EPS, p1 );
+								pv.subVectors( p0, p1 );
+				
+							} else {
+				
+								mobiusfunc( u, v + EPS, p1 );
+								pv.subVectors( p1, p0 );
+				
+							}
+				
+							// cross product of tangent vectors returns surface normal
+				
+							normal.crossVectors( pu, pv ).normalize();
+							normals.push( normal.x, normal.y, normal.z );
+				
+							// uv
+				
+							uvs.push( u, v );
+				
+						}
+					}
+					
+					// build geometry
+					this.setIndex( indices );
+					this.setAttribute( 'position', new Float32BufferAttribute( vertices, 3 ) );
+					this.setAttribute( 'normal', new Float32BufferAttribute( normals, 3 ) );
+					this.setAttribute( 'uv', new Float32BufferAttribute( uvs, 2 ) );
+				}
+			}
+			
+			export { Mobius };	
+
+			let camera, scene, renderer, stats;
+
+			import {Mobius} from './myMobius2.html';
+			init();
+			animate();
+
+			function init() {
+
+				const container = document.getElementById( 'container' );
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+				camera.position.y = 200;
+
+				scene = new THREE.Scene();
+
+				//
+
+				const ambientLight = new THREE.AmbientLight( 0xcccccc, 0.4 );
+				scene.add( ambientLight );
+
+				const pointLight = new THREE.PointLight( 0xffffff, 0.8 );
+				camera.add( pointLight );
+				scene.add( camera );
+
+				//
+
+				const map = new THREE.TextureLoader().load( 'textures/uv_grid_opengl.jpg' );
+				map.wrapS = map.wrapT = THREE.RepeatWrapping;
+				map.anisotropy = 16;
+
+				const material = new THREE.MeshPhongMaterial( { map: map, side: THREE.DoubleSide } );
+
+				//
+
+				let geometry, object;
+
+
+
+				geometry = new Mobius( mobius, 20, 20 );
+				object = new THREE.Mesh( geometry, material );
+				object.position.set( 0, 0, 0 );
+				object.scale.multiplyScalar( 30 );
+				scene.add( object );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				window.addEventListener( 'resize', onWindowResize );
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				render();
+				stats.update();
+
+			}
+
+			function render() {
+
+				const timer = Date.now() * 0.0001;
+
+				
+				camera.position.x = Math.cos( timer ) * 800;
+				camera.position.z = Math.sin( timer ) * 800;
+					
+				camera.lookAt( scene.position );
+
+				scene.traverse( function ( object ) {
+
+					/*if ( object.isMesh === true ) {
+
+						object.rotation.x = timer * 5;
+						object.rotation.y = timer * 2.5;
+
+					}*/
+
+				} );
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
